@@ -9,7 +9,7 @@
             Get-SCOMManagementServer |% { Copy-Item -Path $scriptLocation -Destination "\\$($_.NetworkName)\c$\Path\To\Folder" -Force}
     3. When creating the command, use these settings:
         Path: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
-        Command: -executionPolicy Bypass -noprofile -file "X:\Path\to\SCOMCommandTest.ps1" '  # Quotes matter.
+        Command: -executionPolicy Bypass -noprofile -file "X:\Path\to\SCOMCommandTest.ps1" -useSCOM  # Quotes matter.
         Startup: X:\Path\To\SCOMCommandTest.ps1
 
     Author:
@@ -27,7 +27,7 @@ $logName = "SCOM-Notification-Command-Test-transcript.log"
 ###################################################
 # Script variables - do not edit
 #
-# First things first, create a file to show that the script was at least started and began 
+# First things first, create a file to show that the script was at least started and began
 
 $logFullPath = Join-Path -Path $logLocation -ChildPath $logName
 $whoami = whoami
@@ -41,44 +41,56 @@ If($(Test-Path -Path $logFullPath){
     Move-Item -Path $logFullPath -Destination "$($logFullPath).bak"
 }
 Start-Transcript -Path $(Join-Path -Path $logLocation -ChildPath $logName) -IncludeInvocationHeader
+Write-Output "Gathering basic OS related info"
+Write-Output "PowerShell states it has the following settings:"
 $scomAPI = New-Object -ComObject mom.ScriptAPI
 $scomAPI.LogScriptEvent($ScriptName, $EventID, $sevInfo, "This event is logged to verify end-to-end functionality of the SCOM Command Notification Channel `nRunning as: ($whoami) ")
 If($profile){
-    Write-Output "Profile: Using the following PowerShell profile: $($profile)"}
+    Write-Output "`tProfile: Using the following PowerShell profile: $($profile)"}
     else {
-        Write-Output "Profile: Not using a profile"
+        Write-Output "`tProfile: Not using a profile"
     }
 }
-Write-Output  "Script: $PSCommandPath"
-Write-Output  "Present Working Directory: $PWD"
+Write-Output  "`tScript: $($PSCommandPath)"
+Write-Output  "`tPresent Working Directory: $($PWD)"
 If($args) {
-    Write-Output "There are $($args.Count) arguments"
+    Write-Output "`tThere are $($args.Count) arguments"
     $i = 0
     foreach ($item in $args) {
-        Write-Output "`tArgument at position $i is $item"
+        Write-Output "`t`tArgument at position $i is $item"
         $i++
     }
+} else {
+    Write-Output "`tNo Arguments passed to script."
 }
-Write-Output "Invocation Name: $($MyInvocation.InvocationName)"
-Write-Output $MyInvocation.ScriptName
-Write-Output $MyInvocation.UnboundArguments
-Write-Output "Command Path: $($MyInvocation.PSCommandPath)"
-Write-Output "Script Path: $($MyInvocation.PSScriptRoot)"
-$PSBoundParameters
-$PSScriptRoot
-$PSCommandPath
-$PID
-$PSSenderInfo
-$PWD
+Write-Output "`tInvocation Name: $($MyInvocation.InvocationName)"
+Write-Output "`tScript name: $($MyInvocation.ScriptName)"
+Write-Output "`tUnbound Arguments: $($MyInvocation.UnboundArguments)"
+Write-Output "`tCommand Path: $($MyInvocation.PSCommandPath)"
+Write-Output "`tScript Path: $($MyInvocation.PSScriptRoot)"
+Write-OutPut "`tPID: $($PID)"
+Write-Output "`tModule: $($MyInvocation.MyCommand.Module)"
+Write-Output "`tModule Name: $($MyInvocation.MyCommand.ModuleName)"
+Write-Output "`tParameters: $($MyInvocation.MyCommand.Parameters)"
+Write-Output "`tParameter Sets: $($MyInvocation.MyCommand.ParameterSets)"
+Write-Output "`tScript Block: $($MyInvocation.MyCommand.ScriptBlock)"
+Write-OutPut "`tSource: $($MyInvocation.MyCommand.Source)"
+Write-Output "`tOutput Type: $($MyInvocation.MyCommand.OutputType)"
+Write-Output "`tCommand Origin: $($MyInvocation.CommandOrigin)"
+Write-Output "`tScript Name: $($MyInvocation.ScriptName)"
+Write-Output "`tPipeline Length: $($MyInvocation.PipelineLength) `t Pipeline Position: $($MyInvocation.PipelinePosition)"
+$CurrentVariables = Get-Variable
+Write-output "Current variables:"
+Write-Output $(Format-Table -InputObject $CurrentVariables -RepeatHeader)
 
 
-$MyInvocation
 "*********************************"
 $HOST
 "**********************************"
 $Profile
 
 If($useSCOM) {
+    Write-Output "Gathering additional information from SCOM"
     $Error.Clear()
     # Import the OperationsManager module and connect to the management group
     $SCOMPowerShellKey = "HKLM:\SOFTWARE\Microsoft\System Center Operations Manager\12\Setup\Powershell\V2"
@@ -96,7 +108,7 @@ If($useSCOM) {
 
     $notiPool = Get-SCOMResourcePool -DisplayName "Notifications Resource Pool"
     If($notiPool.members.count -gt 1) {
-        Write-Output "Notifications Resource Pool has ($notiPool.members.count) members: `n$($notipool.members | select-object -Property DisplayName)"
+        Write-Output "Notifications Resource Pool has $($notiPool.members.count) members: `n$($notipool.members | select-object -Property DisplayName)"
         Write-Output "Verifying that script '$($PSCommandPath)' exists on all members:"
         $remotePath = $PSCommandPath.Replace(":","$")
         foreach($member in $notiPool.members) {
@@ -112,7 +124,11 @@ If($useSCOM) {
         $CommandChannels = Get-SCOMNotificationChannel | Where-Object {$_.ChannelType -eq "Command"}
         Write-Output "Found $CommandCHannels.Count notification channels that call a command"
         foreach($command in $CommandChannels) {
-            "Command Display Name: $command.DisplayName`n `tCommand Action: $command.action`n`n"
+            Write-Output "Command Display Name: $($command.DisplayName)`n `tCommand Action: $($command.action)`n`n"
         }
     }
 }
+
+Stop-Transcript
+$outputLog = Get-Content -Path $logFullPath
+$scomAPI.LogScriptEvent($ScriptName, $EventID, $sevInfo, $outputLog)
