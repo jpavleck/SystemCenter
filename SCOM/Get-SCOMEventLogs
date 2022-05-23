@@ -1,0 +1,50 @@
+Function Get-SCOMEventLogs {
+    [cmdletbinding()]
+    param(
+        [String[]]$Servers
+    )
+    $ScriptPath = "$env:USERPROFILE\Documents"
+    $OutputPath = "$ScriptPath\Get-SCOMEventLogsOutput"
+    IF (!(Test-Path $OutputPath)) {
+        Write-Host "Output folder not found. Creating folder...." -ForegroundColor Magenta
+        md $OutputPath
+    }
+    [String[]]$Logs = "Application", "System", "Operations Manager"
+    $servers = $servers | select -Unique
+    foreach ($server in $servers) {
+        foreach ($log in $logs) {
+            Write-Host "exporting $log log on $server"
+            Invoke-Command -ComputerName $server {
+                $fileCheck = test-path "c:\windows\Temp\$using:server.$using:log.evtx"
+                if ($fileCheck -eq $true) {
+                    Remove-Item "c:\windows\Temp\$using:server.$using:log.evtx" -Force
+                }
+                wevtutil export-log $using:log "c:\windows\Temp\$using:server.$using:log.evtx"
+                wevtutil archive-log "c:\windows\Temp\$using:server.$using:log.evtx" /locale:En
+            }
+            $fileCheck2 = test-path "$OutputPath\$server.$log"
+            if (!($fileCheck2)) {
+                New-Item -ItemType directory -Path "$OutputPath" -Name "$server.$log"
+                New-Item -ItemType directory -Path "$OutputPath\$server.$log" -Name "localemetadata"
+            }
+            Copy-Item "\\$server\c$\windows\temp\$server.$log.evtx" "$OutputPath\$server.$log" -force
+            #"Get-ChildItem \\$server\c$\windows\temp\localemetadata\"
+            Get-ChildItem "\\$server\c$\windows\temp\localemetadata\" |
+            where { $_.name -like "*$server*" -and $_.name -like "*$log*" } |
+            Copy-Item -Destination "$OutputPath\$server.$log\localemetadata\" -recurse -force
+        }
+    }
+    If(Get-Module -Name Microsoft.PowerShell.Archive) {
+        $OutputZip = Join-Path -Path $OutputPath -ChildPath "$(Get-Date -Format "yyyy-MM-dd")_SCOMLogfiles.zip"
+        Write-Host -Object "`tCreating .zip file" -NoNewLine
+        Compress-Archive -Path "$OutputPath\*" -DestinationPath $OutputZip -Force
+        If($?) {
+            Write-Host -Foreground Green -Object "`t`t - SUCCESS!"
+            Write-Host -Object "Created $OutputZip"
+        } else {
+            Write-Host -Foreground Red -Object "`t`t - FAILED!!"
+        }
+    }
+    
+    Get-ChildItem $OutputPath | sort lastwritetime
+}
