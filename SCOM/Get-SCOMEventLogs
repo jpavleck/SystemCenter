@@ -44,6 +44,8 @@ Function Get-SCOMEventLogs {
         } else {
             Write-Host -Foreground Red -Object "`t`t - FAILED!!"
         }
+    } else {
+    Write-Host -ForegroundColor Yellow "It appears you don't have the PowerShell archive module. Please manually zip the log files before uploading."
     }
     
     Get-ChildItem $OutputPath | sort lastwritetime
